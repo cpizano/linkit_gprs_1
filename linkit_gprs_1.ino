@@ -8,19 +8,22 @@
 #include <LTask.h>
 #include <LGPRS.h>
 #include <LGPRSClient.h>
+#include <LFlash.h>
+
 #include "xtypes.h"
 
 #define DHTPIN 3
 #define DHTTYPE DHT22
 
 #define SVC_URL "erudite-syntax-729.appspot.com"
-#define DEVICE_ID "did=23401"
-#define SER_DBG 1
+//#define SER_DBG 1
 
 SeeedLedBar bar(9, 8);
 DHT dht(DHTPIN, DHTTYPE);
 LBatteryClass battery;
 VMCHAR build_datetime[64] = {0};
+IoTConfig iot_config;
+int cycle_counter = 0;
 
 void DebugOut(const char* txt) {
 #if defined(SER_DBG)
@@ -50,8 +53,8 @@ int LightSensorRead() {
 }
 
 bool DoRegRequest(LGPRSClient& client, const char* status_s, int battery, int cycles) {
-  client.printf("GET /reg?" DEVICE_ID "&sta=%s&bat=%d&cyc=%d HTTP/1.1\n",
-                status_s, battery, cycles);
+  client.printf("GET /reg?did=%s&sta=%s&bat=%d&cyc=%d HTTP/1.1\n",
+                iot_config.did, status_s, battery, cycles);
   client.printf("Host: " SVC_URL ":80\n");
   client.printf("User-Agent: LinkIt(%s)IoT\n", build_datetime);
   client.println();
@@ -83,17 +86,74 @@ bool ProcessMessage(const char* message, RegMessage* rm) {
   return true;  
 }
 
+int CopyCfgValue(const char* key_name, const char* in_buf, char* out_buf, int sz) {
+  char* pos_a = strstr(in_buf, key_name);
+  if (!pos_a) {
+    DebugOut("=no keyname");
+    return 0;
+  }
+  char* pos_b = strchr(pos_a, '\n');
+  if (pos_b < pos_a) {
+    DebugOut("=cfg corrupt");
+    return 0;     
+  }
+  pos_a += strlen(key_name);
+  int delta = pos_b - pos_a;
+  if (delta >= sz) {
+    DebugOut("=bad cfg value sz");
+    return 0;
+  }
+  memcpy(out_buf, pos_a, delta);
+  memset(out_buf + delta, 0, sz - delta);
+  return delta;
+}
+
+bool ProcessConfig(const char* filename, IoTConfig* iot_config) {
+  LFile f = LFlash.open(filename, FILE_READ);
+  if (!f) {
+    DebugOut("=missing flash file");
+    return false;    
+  }
+
+  f.seek(0);
+  const int sz = 1024 * 2;
+  char* buf = new char[sz];
+  f.read(buf, sz);
+  
+  const char header[] = "IoTConfig0\n";
+  char* root_pos = strstr(buf, header);
+  if (!root_pos) {
+    DebugOut("=bad config header");
+    return false; 
+  }
+
+  root_pos += sizeof(header) - 1;
+  CopyCfgValue("@did:", root_pos, iot_config->did, sizeof(iot_config->did));
+  DebugOut(iot_config->did);
+  CopyCfgValue("@dom:", root_pos, iot_config->dom, sizeof(iot_config->dom));
+  DebugOut(iot_config->dom);
+
+  delete buf;
+  return true;
+}
+
 void setup() {
   Serial.begin(9600);
   bar.begin(9, 8);
   dht.begin();
+  LTask.begin();
+  LFlash.begin();
   
   LTask.remoteCall(&GetFirmwareBuild, NULL);
   bar.setLevel(1);
 
   DebugWait();  
-  Serial.print("v 0.0.3 ready ");
+  Serial.print("v 0.0.4b ready ");
   Serial.println(build_datetime);
+  
+  // the config file is at the root of the drive and can be
+  // written when mounting the LinkIt as a flash drive.
+  ProcessConfig("iot.cfg", &iot_config);
   
   while(!LGPRS.attachGPRS("epc.tmobile.com", NULL, NULL)) {
     DebugOut("wait for SIM card");
@@ -105,8 +165,6 @@ void setup() {
   bar.setLevel(2);
 }
 
-int cycle_counter = 0;
-
 void loop() {
   ++cycle_counter;
   DebugOut("loop");
@@ -116,11 +174,11 @@ void loop() {
   
   if(!client.connect(SVC_URL, 80)) {
     bar.indexBit(0b000001000000001);
-    DebugOut("== error connecting server");
+    DebugOut("=error connecting server");
     return;
   }
   
-  DebugOut(LightSensorRead());
+  // LightSensorRead()
   
   float temp = 0.0;
   float humt = 0.0;
@@ -141,13 +199,13 @@ void loop() {
   
   if (!message) {
     bar.indexBit(0b000001010000001); 
-    DebugOut("== error reading server");
+    DebugOut("=error reading server");
     return; 
   }
 
   RegMessage rm;
   if (!ProcessMessage(message, &rm)) {
-    DebugOut("== wrong message");
+    DebugOut("=wrong message");
     delete message;
     return; 
   }
