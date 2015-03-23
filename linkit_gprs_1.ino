@@ -1,6 +1,6 @@
 // Linkit ONE proto code. Copyright 2015 Carlos Pizano.
 // This code assumes you have SeedStudio ledbar and a functioning
-// GPRS sim card.
+// GPRS SIM card.
 
 #include <LBattery.h>
 
@@ -15,8 +15,17 @@
 // Apparently arduino insists new types to be defined in a separate file.
 #include "xtypes.h"
 
-#define SVC_URL "erudite-syntax-729.appspot.com"
 //#define SER_DBG 1
+
+
+#define STATE_BAT 1
+#define STATE_PWR 2
+
+const char* const rdy_states[] = {
+  "rdy_non",   // 0
+  "rdy_bat",   // 1
+  "rdy_pwr",   // 2
+};
 
 SeeedLedBar bar(9, 8);
 LBatteryClass battery;
@@ -55,7 +64,7 @@ int LightSensorRead() {
 bool DoRegRequest(LGPRSClient& client, const char* status_s, int battery, int cycles) {
   client.printf("GET /reg?did=%s&sta=%s&bat=%d&cyc=%d HTTP/1.1\n",
                 iot_config.did, status_s, battery, cycles);
-  client.printf("Host: " SVC_URL ":80\n");
+  client.printf("Host: %s:80\n", iot_config.dom);
   client.printf("User-Agent: LinkIt(%s)IoT\n", firmware_datetime);
   client.println();
   return true;
@@ -190,7 +199,7 @@ void loop() {
   delay(25000);
   LGPRSClient client;
   
-  if(!client.connect(SVC_URL, 80)) {
+  if(!client.connect(iot_config.dom, 80)) {
     bar.indexBit(0b000001000000001);
     DebugOut("=error connecting server");
     return;
@@ -198,7 +207,9 @@ void loop() {
   
   LightSensorRead();
  
-  DoRegRequest(client, "ready", battery.level(), cycle_counter);
+  DoRegRequest(client, 
+               rdy_states[battery.isCharging() ? STATE_PWR : STATE_BAT],
+               battery.level(), cycle_counter);
   delay(2500);
   
   char* message = ReadMessage(client);
