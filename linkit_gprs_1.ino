@@ -1,4 +1,6 @@
-#include "DHT.h"
+// Linkit ONE proto code. Copyright 2015 Carlos Pizano.
+// This code assumes you have SeedStudio ledbar and a functioning
+// GPRS sim card.
 
 #include <LBattery.h>
 
@@ -10,18 +12,15 @@
 #include <LGPRSClient.h>
 #include <LFlash.h>
 
+// Apparently arduino insists new types to be defined in a separate file.
 #include "xtypes.h"
-
-#define DHTPIN 3
-#define DHTTYPE DHT22
 
 #define SVC_URL "erudite-syntax-729.appspot.com"
 //#define SER_DBG 1
 
 SeeedLedBar bar(9, 8);
-DHT dht(DHTPIN, DHTTYPE);
 LBatteryClass battery;
-VMCHAR build_datetime[64] = {0};
+VMCHAR firmware_datetime[64] = {0};
 IoTConfig iot_config;
 int cycle_counter = 0;
 
@@ -41,7 +40,8 @@ void DebugWait() {
 }
 
 boolean GetFirmwareBuild(void*) {
-  vm_get_sys_property(MRE_SYS_BUILD_DATE_TIME,  build_datetime, sizeof(build_datetime));
+  // Executed in another thread. Don't do Arduino stuff there.
+  vm_get_sys_property(MRE_SYS_BUILD_DATE_TIME,  firmware_datetime, sizeof(firmware_datetime));
   return true;
 }
 
@@ -56,7 +56,7 @@ bool DoRegRequest(LGPRSClient& client, const char* status_s, int battery, int cy
   client.printf("GET /reg?did=%s&sta=%s&bat=%d&cyc=%d HTTP/1.1\n",
                 iot_config.did, status_s, battery, cycles);
   client.printf("Host: " SVC_URL ":80\n");
-  client.printf("User-Agent: LinkIt(%s)IoT\n", build_datetime);
+  client.printf("User-Agent: LinkIt(%s)IoT\n", firmware_datetime);
   client.println();
   return true;
 }
@@ -140,17 +140,19 @@ bool ProcessConfig(const char* filename, IoTConfig* iot_config) {
 void setup() {
   Serial.begin(9600);
   bar.begin(9, 8);
-  dht.begin();
+  bar.setLevel(1);
+
   LTask.begin();
   LFlash.begin();
   
+  // Get the firmware version.
   LTask.remoteCall(&GetFirmwareBuild, NULL);
-  bar.setLevel(1);
 
+  // Wait for the terminal app to send any key.
   DebugWait();  
-  Serial.print("v 0.0.4b ready ");
-  Serial.println(build_datetime);
-  
+  DebugOut("v 0.0.4c ready ");
+
+  // Ready key parameters from the config file.
   // the config file is at the root of the drive and can be
   // written when mounting the LinkIt as a flash drive.
   ProcessConfig("iot.cfg", &iot_config);
@@ -161,8 +163,8 @@ void setup() {
   }
   
   delay(3000);
-  DebugOut("init done.");
   bar.setLevel(2);
+  DebugOut("init done.");
 }
 
 void loop() {
@@ -178,25 +180,13 @@ void loop() {
     return;
   }
   
-  // LightSensorRead()
-  
-  float temp = 0.0;
-  float humt = 0.0;
-  if (dht.readHT(&temp, &humt)) {
-    Serial.print("temp = ");
-    Serial.println(temp);
-    Serial.print("humidity = ");
-    Serial.println(humt);
-  } else {
-    Serial.println("not t&h data"); 
-  }
-
+  LightSensorRead();
+ 
   DoRegRequest(client, "ready", battery.level(), cycle_counter);
   delay(2500);
   
   char* message = ReadMessage(client);
-  DebugOut(message);
-  
+  DebugOut(message);  
   if (!message) {
     bar.indexBit(0b000001010000001); 
     DebugOut("=error reading server");
