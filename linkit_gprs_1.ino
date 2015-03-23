@@ -128,11 +128,18 @@ bool ProcessConfig(const char* filename, IoTConfig* iot_config) {
   }
 
   root_pos += sizeof(header) - 1;
-  CopyCfgValue("@did:", root_pos, iot_config->did, sizeof(iot_config->did));
+  int count;
+  count = CopyCfgValue("@did:", root_pos, iot_config->did, sizeof(iot_config->did));
+  if (!count) {
+   return false; 
+  }
   DebugOut(iot_config->did);
-  CopyCfgValue("@dom:", root_pos, iot_config->dom, sizeof(iot_config->dom));
+  count = CopyCfgValue("@dom:", root_pos, iot_config->dom, sizeof(iot_config->dom));
+  if (!count) {
+   return false; 
+  }
   DebugOut(iot_config->dom);
-
+  
   delete buf;
   return true;
 }
@@ -155,7 +162,12 @@ void setup() {
   // Ready key parameters from the config file.
   // the config file is at the root of the drive and can be
   // written when mounting the LinkIt as a flash drive.
-  ProcessConfig("iot.cfg", &iot_config);
+  if (!ProcessConfig("iot.cfg", &iot_config)) {
+    DebugOut("load from iot.cfg failed");
+    bar.indexBit(0b000001001000001);
+    delay(10000);
+    return;
+  }
   
   while(!LGPRS.attachGPRS("epc.tmobile.com", NULL, NULL)) {
     DebugOut("wait for SIM card");
