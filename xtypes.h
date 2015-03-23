@@ -8,6 +8,7 @@ struct RegMessage {
 struct IoTConfig {
   char did[16];
   char dom[64];
+  char cel[64];
   int  cyc;
 };
 

@@ -137,9 +137,13 @@ bool ProcessConfig(const char* filename, IoTConfig* iot_config) {
   count = CopyCfgValue("@dom:", root_pos, iot_config->dom, sizeof(iot_config->dom));
   if (!count) {
    return false; 
-  }
+  }  
   DebugOut(iot_config->dom);
-  
+  count = CopyCfgValue("@cel:", root_pos, iot_config->cel, sizeof(iot_config->cel));
+  if (!count) {
+   return false; 
+  }
+  DebugOut(iot_config->cel);  
   delete buf;
   return true;
 }
@@ -169,12 +173,12 @@ void setup() {
     return;
   }
   
-  while(!LGPRS.attachGPRS("epc.tmobile.com", NULL, NULL)) {
+  while(!LGPRS.attachGPRS(iot_config.cel, NULL, NULL)) {
     DebugOut("wait for SIM card");
     delay(500);
   }
-  
-  delay(3000);
+  delay(4000);
+  // Initialization done.
   bar.setLevel(2);
   DebugOut("init done.");
 }
@@ -183,7 +187,7 @@ void loop() {
   ++cycle_counter;
   DebugOut("loop");
 
-  delay(20000);
+  delay(25000);
   LGPRSClient client;
   
   if(!client.connect(SVC_URL, 80)) {
